@@ -2,8 +2,28 @@
 
 :- portray_text(true).
 
+:- use_module(etrace).
+
 :- use_module(library(dcg/basics)).
 :- use_module(library(clpfd)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%                                                                %%%
+%%%                              UTILs                             %%%
+%%%                                                                %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% works but SLOW
+%list_set([],[]).
+%list_set([X|Xs], [X|Ss]) :- list_set(Xs, Ss), \+ member(X, Ss).
+%list_set([X|Xs], [X|R]) :- list_set(Xs, Ss), nth0(_, Ss, X, R).
+
+remove_from_rest(X, Xs, Rest) :- nth0(_, Xs, X, R), !, remove_from_rest(X, R, Rest).
+remove_from_rest(X, Xs, Xs) :- \+member(X, Xs).
+
+list_set([], []).
+list_set([X|Xs], [X|S]) :- remove_from_rest(X, Xs, R), list_set(R, S).
 
 %% https://adventofcode.com/2024/day/5
 % --- Day 5: Print Queue ---
@@ -100,6 +120,20 @@ update_rule(Upd, X-Y) :- \+ member(X, Upd) ; \+ member(Y, Upd).
 
 correctUpdate_rules(U, Rs) :- forall(member(R, Rs), update_rule(U, R)).
 
+% :- correctUpdate_rules([3,1], []).
+%@ true.
+% :- correctUpdate_rules([3,1], [1-2,2-3]).
+%@ true.
+% :- correctUpdate_rules([1,3], [1-2,2-3]).
+%@ true.
+% :- correctUpdate_rules([3,1,2], [1-2,2-3]).
+%@ false.
+% :- correctUpdate_rules([2,3,1], [1-2,2-3]).
+%@ false.
+% :- correctUpdate_rules([1,2,3], [1-2,2-3]).
+%@ true.
+% :- correctUpdate_rules([1,2,3,4], [1-2,2-3]).
+
 updates_rules_correctUpdates(Upds, Rs, Oks) :-
     findall(U, (member(U, Upds),
                 correctUpdate_rules(U, Rs))
@@ -112,7 +146,7 @@ middlePage_ofUpdate(M, Up) :- append([H,[M],T], Up), length(H, N), length(T, N).
 
 
 rule(X-Y) --> integer(X), `|`, integer(Y), `\n`.
-update([Page])       --> integer(Page).
+                                           update([Page])       --> integer(Page).
 update([Page|Pages]) --> integer(Page), `,`, update(Pages).
 
 input_rules([R]) --> rule(R).
@@ -126,7 +160,7 @@ input(Rs, Ups) --> input_rules(Rs), `\n`, input_updates(Ups).
 :- phrase(input_rules([23-43,45-64]), `23|43\n45|64\n`).
 
 example(
-`47|53
+    `47|53
 97|13
 97|61
 97|47
@@ -167,7 +201,9 @@ rules_updates_result(Rs, Ups, Result) :-
     updates_rules_correctUpdates(Ups, Rs, Correct),
     updates_middlePageSum(Correct, Result).
 
-:- example(Cs), phrase(input(Rs, Ups), Cs),
+exampleRules_updates(Rs, Ups) :- example(Cs), phrase(input(Rs, Ups), Cs).
+
+:- exampleRules_updates(Rs, Ups),
    member(47-53, Rs), member(61-53, Rs), member(53-13, Rs),
    member([75,47,61,53,29], Ups), member([75,29,13], Ups),
    member([97,13,75,29,47], Ups),
@@ -180,7 +216,7 @@ rules_updates_result(Rs, Ups, Result) :-
 
 % For each of the incorrectly-ordered updates, use the page ordering rules to put the page numbers in the right order. For the above example, here are the three incorrectly-ordered updates and their correct orderings:
 
-%                                                                                                                                             75,97,47,61,53 becomes 97,75,47,61,53.
+% 75,97,47,61,53 becomes 97,75,47,61,53.
 % 61,13,29 becomes 61,29,13.
 % 97,13,75,29,47 becomes 97,75,47,29,13.
 
@@ -188,30 +224,249 @@ rules_updates_result(Rs, Ups, Result) :-
 
 % Find the updates which are not in the correct order. What do you get if you add up the middle page numbers after correctly ordering just those updates?
 
+element_beforeThanElement_inList(A, B, L) :-
+    nth0(I, L, A), nth0(J, L, B), I #< J.
 
-incorrect_rules_corrected(Inc, Rs, Ok) :-
-    permutation(Ok, Inc),
-    correctUpdate_rules(Ok, Rs), !.
+% this works, but is damn slow ... it won't terminate for the problem input
+incorrect_rules_corrected__slow(W, Rs, Ok) :-
+    length(W, L), length(Ok, L),
+    foreach((member(A-B, Rs), member(A, W), member(B, W)),
+            element_beforeThanElement_inList(A, B, Ok)),
+    foreach(member(X, W), member(X, Ok)).
 
-incorrects_rules_correctedList(Wrong, Rs, Oks) :-
+incorrects_rules_correctedList__slow(Wrongs, Rs, Oks) :-
     findall(Ok,
-            (   member(W, Wrong),
-                incorrect_rules_corrected(W, Rs, Ok))
+            (   member(W, Wrongs),
+                incorrect_rules_corrected__slow(W, Rs, Ok))
             , Oks).
 
-% test, first, one arround middle, last; and calculate the expected result
-
-
-updates_correct_incorrects(Ups, CorrectLst, Incorrects) :-
+% +Ups, +CorrectLst, -Incorrects
+updates_corrects_incorrects(Ups, CorrectLst, Incorrects) :-
     findall(I, (member(I, Ups), \+ member(I, CorrectLst)), Incorrects).
 
 
-:- example(Cs), phrase(input(Rs, Ups), Cs),
-   updates_rules_correctUpdates(Ups, Rs, CorrectLst),
-   updates_correct_incorrects(Ups, CorrectLst, Incorrects),
-   incorrects_rules_correctedList(Incorrects, Rs, Corrected),
-   updates_middlePageSum(Corrected, 123).
+% but it works for the example:
+%% :- exampleRules_updates(Rs, Ups),
+%%    updates_rules_correctUpdates(Ups, Rs, CorrectLst),
+%%    updates_corrects_incorrects(Ups, CorrectLst, Incorrects),
+%%    member(W, Incorrects),
+%%    incorrect_rules_corrected__slow(W, Rs, Ok),
+%%    nodes_dagEdges_sortedNodes(W, Rs, Ok).
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%                                                                %%%
+%%%                     Directed Acyclic GRAPHs                    %%%
+%%%                                                                %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+graphEmpty(loe([])).
+
+% so let's see if we could pull off a top sort with dag in prolog
+
+nodes_graph(Xs, loe(E)) :- setof(X, node_graph_(X, loe(E)), Xs).
+node_graph_(X, loe(E)) :- member(X-_, E) ; member(_-X, E).
+node_graph(X, G) :- nodes_graph(Ns, G), member(X, Ns).
+
+edge(E, loe(Es)) :- member(E, Es).
+edge(E, loe(Es), Rest) :- nth0(_, Es, E, Rest).
+
+path_from_to_dag([X, Y], X, Y, loe(Es)) :- edge(X-Y, loe(Es)).
+path_from_to_dag(Path, X, Z, loe(Es)) :-
+    edge(X-Y, loe(Es), NUE),
+    path_from_to_dag(P1, Y, Z, loe(NUE)),
+    [X|P1]=Path.
+path_from_to_dag(_, X, Y, loe([])) :- dif(X,Y), fail.
+
+% :- path_from_to_dag(P, 1, 4, loe([1-2,1-3,3-5,3-4,5-4])).
+%@ P = [1, 3, 4] ;
+%@ P = [1, 3, 5, 4] ;
+%@ false.
+% :- path_from_to_dag(P, X, 4, loe([1-2,1-3,3-5,3-4,5-4])).
+%@ P = [3, 4],
+%@ X = 3 ;
+%@ P = [5, 4],
+%@ X = 5 ;
+%@ P = [1, 3, 4],
+%@ X = 1 ;
+%@ P = [1, 3, 5, 4],
+%@ X = 1 ;
+%@ P = [3, 5, 4],
+%@ X = 3 ;
+%@ false.
+
+% it can be used to get neighbours
+% :- path_from_to_dag([1, X], 1, X, loe([1-2,1-3,3-5,3-4,5-4])).
+%@ X = 2 ;
+%@ X = 3 ;
+%@ false.
+
+% or outgoin edges:
+% :- path_from_to_dag(EdgeL, 1, X, loe([1-2,1-3,3-5,3-4,5-4])), EdgeL=[1, X], Edge=1-X.
+%@ EdgeL = [1, 2],
+%@ X = 2,
+%@ Edge = 1-2 ;
+%@ EdgeL = [1, 3],
+%@ X = 3,
+%@ Edge = 1-3 ;
+%@ false.
+
+node_exit_graph(N, E, loe(Es)) :- path_from_to_dag(EdgeL, N, X, loe(Es)), EdgeL=[N, X], E=1-X.
+
+node_adyacent_graph(N, M, loe(Es)) :- path_from_to_dag([N,M], N, M, loe(Es)).
+
+subGraph_edge_graph(loe(SErest), E, loe(SEs)) :- nth0(_,SEs,E,SErest).
+
+subGraph_node_graph(loe(SEs), N, loe(Es)) :-
+    node_graph(N, loe(Es)),
+    findall(X, (member(X, Es), \+ (X=N-_ ; X=_-N)), SEs).
+
+sourceNode_graph(N, loe(Es)) :-
+    nodes_graph(Ns, loe(Es)), member(N, Ns),
+    \+ path_from_to_dag(_, _, N, loe(Es)).
+
+% :- sourceNode_graph(Xs, loe([1-2,1-3,3-5,3-4,5-4])).
+%@ Xs = 1 ;
+%@ false.
+% :- sourceNode_graph(Xs, loe([1-2,1-3,3-4,5-4])).
+%@ Xs = 1 ;
+%@ Xs = 5.
+
+sinkNode_graph(_, loe([])).
+sinkNode_graph(N, loe(Es)) :-
+    nodes_graph(Ns, loe(Es)), member(N, Ns),
+    \+ path_from_to_dag(_, N, _, loe(Es)).
+
+depthFirstTraversal_fromNode_dag(T, A, G) :-
+    sinkNode_graph(Z, G), path_from_to_dag(T, A, Z, G).
+
+depthFirstTraversals_fromNode_dag(Ts, A, G) :-
+    findall(T, depthFirstTraversal_fromNode_dag(T, A, G), Ts).
+
+% :- depthFirstTraversal_fromNode_dag(T, 1, loe([1-2,1-3,3-5,3-4,5-4])).
+%@ T = [1, 2] ;
+%@ T = [1, 3, 4] ;
+%@ T = [1, 3, 5, 4] ;
+%@ false.
+
+nodeInDepthFirstTraversal_fromNode_dag(X, A, G) :-
+    depthFirstTraversals_fromNode_dag(TTs, A, G),
+    append(TTs, TTS),
+    list_set(TTS, Ts), member(X, Ts).
+
+% :- nodeInDepthFirstTraversal_fromNode_dag(T, 1, loe([1-2,1-3,3-5,3-4,5-4])).
+%@ T = 1 ;
+%@ T = 2 ;
+%@ T = 3 ;
+%@ T = 4 ;
+%@ T = 5 ;
+%@ false.
+
+% :- nodeInDepthFirstTraversal_fromNode_dag(T, 1, loe([1-2,1-3,1-4,2-6,2-7])).
+%@ T = 1 ;
+%@ T = 3 ;
+%@ T = 4 ;
+%@ T = 2 ;
+%@ T = 6 ;
+%@ T = 7 ;
+%@ false.
+
+
+% for the lulz, is not used:
+nodeInBreathFirstTraversal_fromNode_dag_(N, N, G) :- nodes_graph(Xs, G), member(N, Xs).
+nodeInBreathFirstTraversal_fromNode_dag_(N, S, G) :- \+ sinkNode_graph(S, G), node_adyacent_graph(S, M, G), nodeInBreathFirstTraversal_fromNode_dag_(N, M, G).
+
+nodeInBreathFirstTraversal_fromNode_dag(X, S, G) :-
+    findall(N, nodeInBreathFirstTraversal_fromNode_dag_(N, S, G), XXs),
+    list_set(XXs, Xs), member(X, Xs).
+
+% :- nodeInBreathFirstTraversal_fromNode_dag(X, 1, loe([1-2,1-3,3-5,3-4,5-4])).
+%@ X = 1 ;
+%@ X = 2 ;
+%@ X = 3 ;
+%@ X = 5 ;
+%@ X = 4 ;
+%@ false.
+
+% -Gs, +E, -S, +S, +G
+subGraph_sourceNodesOut_edges_sourceNodesIn_graph(G, S, [], S, G).
+subGraph_sourceNodesOut_edges_sourceNodesIn_graph(Gs, Sout, [E|Es], Sin, G) :-
+    subGraph_edge_graph(Gs0, E, G), E=_-M,
+    (   (   sourceNode_graph(M, Gs0) ; graphEmpty(Gs0) ) -> Sout = [M|SoutR]
+    ;   SoutR = Sout),
+    subGraph_sourceNodesOut_edges_sourceNodesIn_graph(Gs, SoutR, Es, Sin, Gs0).
+
+% https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm
+khanToposorted_dag(L, G) :-
+    findall(S,sourceNode_graph(S, G),Ss), khanToposorted_dag_(L, G, Ss).
+khanToposorted_dag_([], loe([]), []).
+khanToposorted_dag_([N|L], G, S) :- dif(S,[]),
+                                    nth0(_, S, N, Sr),
+                                    findall(N-M, node_adyacent_graph(N, M, G), Neights),
+                                    subGraph_sourceNodesOut_edges_sourceNodesIn_graph(Gs, SrR, Neights, Sr, G),
+                                    khanToposorted_dag_(L, Gs, SrR).
+
+% :- khanToposorted_dag(L, loe([1-2,2-4,1-3,3-4])).
+%@ L = [1, 2, 3, 4] ;
+%@ L = [1, 3, 2, 4] ;
+%@ false.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%                                                                %%%
+%%%                  Let's use it for the problem                  %%%
+%%%                                                                %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+update_rules_graph(Up, Rs, loe(Es)) :-
+    % luckly there aren't repeated numbers, so it's easiest
+    findall(X-Y, (member(X-Y, Rs), member(X, Up), member(Y, Up)), Es0),
+    findall(source-S, (sourceNode_graph(S, loe(Es0)),
+                       member(S, Up)), Ss),
+    append([Ss,Es0], Es).
+
+incorrect_rules_corrected__fast(Up, Rs, Ok) :-
+    update_rules_graph(Up, Rs, G),
+    khanToposorted_dag(Xs, G),
+    [source|Traversal] = Xs,
+    findall(X, (member(X, Up), \+member(X, Traversal)), Rest),
+    append([Rest,Traversal], Ok). % <- TODO, here we can have more orderings that prepend Rest!
+
+% incorrect_rules_corrected__fast([5,4,3,2,1,6], [0-2,1-2,1-3,3-5,3-4,5-4], C)
+
+incorrects_rules_correctedList__fast(Wrongs, Rs, Oks) :-
+    findall(Ok,
+            (   member(W, Wrongs),
+                incorrect_rules_corrected__fast(W, Rs, Ok))
+            , Oks).
+
+:- exampleRules_updates(Rs, Ups),
+   updates_rules_correctUpdates(Ups, Rs, CorrectLst),
+   updates_corrects_incorrects(Ups, CorrectLst, Incorrects),
+   incorrects_rules_correctedList__slow(Incorrects, Rs, Corrected),
+   incorrects_rules_correctedList__fast(Incorrects, Rs, CorrectedFast),
+   updates_middlePageSum(Corrected, 123),
+   updates_middlePageSum(CorrectedFast, 123).
+
+% :- % W = [71,52,34,41,23,28,96,84,13,32,85,29],
+%    % W = [71,52,34,31,94,16,24,58,53,55,87,41,23,28,96,84,13,32,85,29,42,97,57],
+%    % W=[75,97,47,61,53],
+%    exampleRules_updates(Rs, _),
+%    \+ correctUpdate_rules(W, Rs),
+%    writef("is wrong:       %w ",[W]),nl,
+%    writef("rules:          %w", [Rs]),nl,
+%    update_rules_graph(W, Rs, G),
+%    writef("graph:          %w", [G]),nl,
+%    incorrect_rules_corrected__slow(W, Rs, Ok),
+%    writef("corrected slow: %w", [Ok]),nl, %trace,
+%    incorrect_rules_corrected__fast(W, Rs, OkF),
+%    writef("corrected fast: %w", [OkF]),nl,
+%    %correctUpdate_rules(Ok, Rs),
+%    %write("slow works ok!"),nl,
+%    correctUpdate_rules(OkF, Rs),
+%    write("fast works ok!"),nl,
+%    %permutation(W, Ok),
+%    permutation(W, OkF).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%                                                                %%%
@@ -225,11 +480,10 @@ main([File]) :-
     writef("archivo: %w\n", [File]),
     updates_rules_correctUpdates(Ups, Rs, CorrectLst),
     updates_middlePageSum(CorrectLst, OkResult),
-    writef("la suma de las páginas mediana da: %w\n",
-          [OkResult]),
-    updates_correct_incorrects(Ups, CorrectLst, Incorrects),
-    incorrects_rules_correctedList(Incorrects, Rs, Corrected),
+    writef("la suma de las páginas medianas da: %w\n",
+           [OkResult]),
+    updates_corrects_incorrects(Ups, CorrectLst, Incorrects),
+    incorrects_rules_correctedList__fast(Incorrects, Rs, Corrected),
     updates_middlePageSum(Corrected, CorrectedResult),
     writef("la suma de las medianas de los updates corregidos da: %w\n",
            [CorrectedResult]).
-
