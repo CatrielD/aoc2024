@@ -13,12 +13,6 @@
 %%%                                                                %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-% works but SLOW
-%list_set([],[]).
-%list_set([X|Xs], [X|Ss]) :- list_set(Xs, Ss), \+ member(X, Ss).
-%list_set([X|Xs], [X|R]) :- list_set(Xs, Ss), nth0(_, Ss, X, R).
-
 remove_from_rest(X, Xs, Rest) :- nth0(_, Xs, X, R), !, remove_from_rest(X, R, Rest).
 remove_from_rest(X, Xs, Xs) :- \+member(X, Xs).
 
@@ -418,11 +412,14 @@ khanToposorted_dag_([N|L], G, S) :- dif(S,[]),
 %%%                                                                %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+elem_in(X, [X|_]) :- !.
+elem_in(X, [Y|Lst]) :- dif(X, Y), elem_in(X, Lst).
+
 update_rules_graph(Up, Rs, loe(Es)) :-
     % luckly there aren't repeated numbers, so it's easiest
-    findall(X-Y, (member(X-Y, Rs), member(X, Up), member(Y, Up)), Es0),
+    findall(X-Y, (member(X-Y, Rs), elem_in(X, Up), elem_in(Y, Up)), Es0),
     findall(source-S, (sourceNode_graph(S, loe(Es0)),
-                       member(S, Up)), Ss),
+                       elem_in(S, Up)), Ss),
     append([Ss,Es0], Es).
 
 incorrect_rules_corrected__fast(Up, Rs, Ok) :-
@@ -437,7 +434,9 @@ incorrect_rules_corrected__fast(Up, Rs, Ok) :-
 incorrects_rules_correctedList__fast(Wrongs, Rs, Oks) :-
     findall(Ok,
             (   member(W, Wrongs),
-                incorrect_rules_corrected__fast(W, Rs, Ok))
+                writef("trying to solve: %w", [W]), nl,
+                incorrect_rules_corrected__fast(W, Rs, Ok),
+                writef("solved: %w", [Ok]), nl)
             , Oks).
 
 :- exampleRules_updates(Rs, Ups),
@@ -448,8 +447,10 @@ incorrects_rules_correctedList__fast(Wrongs, Rs, Oks) :-
    updates_middlePageSum(Corrected, 123),
    updates_middlePageSum(CorrectedFast, 123).
 
-% :- % W = [71,52,34,41,23,28,96,84,13,32,85,29],
-%    % W = [71,52,34,31,94,16,24,58,53,55,87,41,23,28,96,84,13,32,85,29,42,97,57],
+
+% slow implementation doesn't even terminate with largest W ...
+% :- W = [71,52,34,31,94,16,24,58,53,55,87,41,23,28,96,84,13,32,85,29,42,97,57],
+%    %W = [71,52,34,41,23,28,96,84,13,32,85,29],
 %    % W=[75,97,47,61,53],
 %    exampleRules_updates(Rs, _),
 %    \+ correctUpdate_rules(W, Rs),
@@ -457,8 +458,8 @@ incorrects_rules_correctedList__fast(Wrongs, Rs, Oks) :-
 %    writef("rules:          %w", [Rs]),nl,
 %    update_rules_graph(W, Rs, G),
 %    writef("graph:          %w", [G]),nl,
-%    incorrect_rules_corrected__slow(W, Rs, Ok),
-%    writef("corrected slow: %w", [Ok]),nl, %trace,
+%    %incorrect_rules_corrected__slow(W, Rs, Ok),
+%    %writef("corrected slow: %w", [Ok]),nl, %trace,
 %    incorrect_rules_corrected__fast(W, Rs, OkF),
 %    writef("corrected fast: %w", [OkF]),nl,
 %    %correctUpdate_rules(Ok, Rs),
@@ -476,7 +477,7 @@ incorrects_rules_correctedList__fast(Wrongs, Rs, Oks) :-
 
 :- initialization(main, main).
 main([File]) :-
-    phrase_from_file(input(Rs, Ups), File),
+    phrase_from_file(input(Rs, Ups), File), !,
     writef("archivo: %w\n", [File]),
     updates_rules_correctUpdates(Ups, Rs, CorrectLst),
     updates_middlePageSum(CorrectLst, OkResult),
