@@ -92,8 +92,8 @@
 # ......#X..
 # 
 # In this example, the guard will visit 41 distinct positions on your map.
-# 
-Predict the path of the guard. How many distinct positions will the guard visit before leaving the mapped area?
+#
+#Predict the path of the guard. How many distinct positions will the guard visit before leaving the mapped area?
 
 
 
