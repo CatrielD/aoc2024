@@ -1,3 +1,5 @@
+using Base: copy
+
 # --- Day 6: Guard Gallivant ---
 # 
 # The Historians use their fancy device again, this time to whisk you all away to the North Pole prototype suit manufacturing lab... in the year 1518! It turns out that having direct access to history is very convenient for a group of historians.
@@ -228,14 +230,28 @@ function is_guard(::LabMapElement)
     false
 end
 
-function guard_coord(map::LabMap)
-    findfirst(is_guard, map)
+function Base.copy(pos::Union{CartesianIndex{2}, Nothing})
+    if pos == Nothing
+        Nothing
+    else
+        CartesianIndex(pos[1], pos[2])
+    end
 end
 
 mutable struct SimulatorState
     guard_pos :: Union{CartesianIndex{2}, Nothing}
     map :: LabMap
-    SimulatorState(map::LabMap) = new(guard_coord(map), map)
+    SimulatorState(map::LabMap) = new(findfirst(is_guard, map), map)
+    SimulatorState(s::String) = SimulatorState(parse_labmap(s))
+    SimulatorState(s::SimulatorState) = new(copy(s.guard_pos), copy(s.map))
+end
+
+function coord_inside(coord::Nothing, ::Any)
+    false
+end
+
+function coord_inside(coord::CartesianIndex{2}, m::LabMap)
+    0 < coord[1] && 0 < coord[2] && coord[1] <= m.size[1] && coord[2] <= m.size[2]
 end
 
 function height(m::LabMap)
@@ -254,62 +270,62 @@ function guard_next(Nothing, ::GuardLookingUp)
     Nothing
 end
 
-function guard_next(s::SimulatorState, g::Type{GuardLookingUp})
+function guard_next(s::SimulatorState)
+    #guard_next_for(s, get_guard(s))
     pos = s.guard_pos
-    if pos == Nothing || pos[1] == 0
+    g = get_guard(s)
+    next_coord = guard_advance(s)
+    if ! coord_inside(next_coord, s.map)
         (coord = Nothing, guard = Nothing)
     else
-        next_coord = CartesianIndex(pos[1]-1, pos[2])
         if s.map[next_coord] == Stuff
-            (coord = pos, GuardLookingRight)
-        else
-            (coord = next_coord, guard = g)
-        end
-    end
-end
-function guard_next(s::SimulatorState, g::Type{GuardLookingDown})
-    pos = s.guard_pos
-    if pos == Nothing || pos[1] == height(s.map)
-        (coord = Nothing, guard = Nothing)
-    else
-        next_coord = CartesianIndex(pos[1]+1, pos[2])
-        if s.map[next_coord] == Stuff
-            (coord = pos, GuardLookingLeft)
-        else
-            (coord = next_coord, guard = g)
-        end
-    end
-end
-function guard_next(s::SimulatorState, g::Type{GuardLookingRight})
-    pos = s.guard_pos
-    if pos == Nothing || pos[2] == width(s.map)
-        (coord = Nothing, guard = Nothing)
-    else
-        next_coord = CartesianIndex(pos[1], pos[2]+1)
-        if s.map[next_coord] == Stuff
-            (coord = pos, GuardLookingDown)
-        else
-            (coord = next_coord, guard = g)
-        end
-    end
-end
-function guard_next(s::SimulatorState, g::Type{GuardLookingLeft})
-    pos = s.guard_pos
-    if pos == Nothing || pos[2] == 0
-        (coord = Nothing, guard = Nothing)
-    else
-        next_coord = CartesianIndex(pos[1], pos[2]-1)
-        if s.map[next_coord] == Stuff
-            (coord = pos, GuardLookingUp)
+            (coord = pos, guard = guard_rotate(g))
         else
             (coord = next_coord, guard = g)
         end
     end
 end
 
+function guard_advance(s::SimulatorState)
+    pos = s.guard_pos
+    guard_advance_for(pos, get_guard(s))
+end
+
+function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingUp})
+    CartesianIndex(pos[1]-1, pos[2])
+end
+
+function guard_rotate(g::Type{GuardLookingUp})
+    GuardLookingRight
+end
+
+function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingDown})
+    CartesianIndex(pos[1]+1, pos[2])
+end
+
+function guard_rotate(g::Type{GuardLookingDown})
+    GuardLookingLeft
+end
+
+function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingRight})
+    CartesianIndex(pos[1], pos[2]+1)
+end
+
+function guard_rotate(g::Type{GuardLookingRight})
+    GuardLookingDown
+end
+
+function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingLeft})
+    CartesianIndex(pos[1], pos[2]-1)
+end
+
+function guard_rotate(g::Type{GuardLookingLeft})
+    GuardLookingUp
+end
+
 function step_simulation!(s::SimulatorState)
     prev_coord = s.guard_pos
-    next_coord, next_guard = values(guard_next(s, get_guard(s)))
+    next_coord, next_guard = values(guard_next(s))
     if next_coord == Nothing
         s.map[prev_coord] = Breadcrumb
         Stop
@@ -321,7 +337,7 @@ function step_simulation!(s::SimulatorState)
     end
 end
 
-function run_simulation_from!(s::SimulatorState, max_steps = 10000)
+function run_simulation_for_part1_from!(s::SimulatorState, max_steps = 10000)
     flag = GoOn
     count = 0
     while flag == GoOn && count < max_steps
@@ -334,12 +350,125 @@ function count_breadcrumbs(m::LabMap)
     length(findall(x -> x == Breadcrumb, m))
 end
 
+# --- Part Two ---
+# 
+# While The Historians begin working around the guard's patrol route, you borrow their fancy device and step outside the lab. From the safety of a supply closet, you time travel through the last few months and record the nightly status of the lab's guard post on the walls of the closet.
+# 
+# Returning after what seems like only a few seconds to The Historians, they explain that the guard's patrol area is simply too large for them to safely search the lab without getting caught.
+# 
+# Fortunately, they are pretty sure that adding a single new obstruction won't cause a time paradox. They'd like to place the new obstruction in such a way that the guard will get stuck in a loop, making the rest of the lab safe to search.
+# 
+# To have the lowest chance of creating a time paradox, The Historians would like to know all of the possible positions for such an obstruction. The new obstruction can't be placed at the guard's starting position - the guard is there right now and would notice.
+# 
+# In the above example, there are only 6 different positions where a new obstruction would cause the guard to get stuck in a loop. The diagrams of these six situations use O to mark the new obstruction, | to show a position where the guard moves up/down, - to show a position where the guard moves left/right, and + to show a position where the guard moves both up/down and left/right.
+# 
+# Option one, put a printing press next to the guard's starting position:
+# 
+# ....#.....
+# ....+---+#
+# ....|...|.
+# ..#.|...|.
+# ....|..#|.
+# ....|...|.
+# .#.O^---+.
+# ........#.
+# #.........
+# ......#...
+# 
+# Option two, put a stack of failed suit prototypes in the bottom right quadrant of the mapped area:
+# 
+# ....#.....
+# ....+---+#
+# ....|...|.
+# ..#.|...|.
+# ..+-+-+#|.
+# ..|.|.|.|.
+# .#+-^-+-+.
+# ......O.#.
+# #.........
+# ......#...
+# 
+# Option three, put a crate of chimney-squeeze prototype fabric next to the standing desk in the bottom right quadrant:
+#
+# ....#.....
+# ....+---+#
+# ....|...|.
+# ..#.|...|.
+# ..+-+-+#|.
+# ..|.|.|.|.
+# .#+-^-+-+.
+# .+----+O#.
+# #+----+...
+# ......#...
+# 
+# Option four, put an alchemical retroencabulator near the bottom left corner:
+# 
+# ....#.....
+# ....+---+#
+# ....|...|.
+# ..#.|...|.
+# ..+-+-+#|.
+# ..|.|.|.|.
+# .#+-^-+-+.
+# ..|...|.#.
+# #O+---+...
+# ......#...
+# 
+# Option five, put the alchemical retroencabulator a bit to the right instead:
+# 
+# ....#.....
+# ....+---+#
+# ....|...|.
+# ..#.|...|.
+# ..+-+-+#|.
+# ..|.|.|.|.
+# .#+-^-+-+.
+# ....|.|.#.
+# #..O+-+...
+# ......#...
+# 
+# Option six, put a tank of sovereign glue right next to the tank of universal solvent:
+# 
+# ....#.....
+# ....+---+#
+# ....|...|.
+# ..#.|...|.
+# ..+-+-+#|.
+# ..|.|.|.|.
+# .#+-^-+-+.
+# .+----++#.
+# #+----++..
+# ......#O..
+# 
+# It doesn't really matter what you choose to use as an obstacle so long as you and The Historians can put it into position without the guard noticing. The important thing is having enough options that you can find one that minimizes time paradoxes, and in this example, there are 6 different positions you could choose.
+# 
+# You need to get the guard stuck in a loop by adding a single new obstruction. How many different positions could you choose for this obstruction?
+
+function check_for_loops(s_::SimulatorState)
+    s = SimulatorState(s_)
+    guard_rotate(get_guard(s))
+end
+
+function run_simulation_for_part2_from!(s::SimulatorState)
+    flag = GoOn
+    count = 0
+    loops = 0
+    while flag == GoOn && count < max_steps
+        flag = step_simulation!(s)
+        loops += check_for_loop(copy(s))
+        count += 1
+    end
+    return loops
+end
+
 function (@main)(args)
     file = args[1]
     input_str = read(file, String)
     s = SimulatorState(parse_labmap(input_str))
-    run_simulation_from!(s)
+    run_simulation_for_part1_from!(s)
     println("visited positions: $(count_breadcrumbs(s.map))")
+
+    run_simulation_for_part2_from!(SimulatorState(input_str))
     0
 end
 
