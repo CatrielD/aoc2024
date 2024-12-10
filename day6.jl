@@ -123,7 +123,7 @@ const GuardType = Union{Type{GuardLookingDown},
                         Type{GuardLookingLeft},
                         Type{GuardLookingRight},
                         Type{GuardLookingUp},
-                        Nothing}
+                        Type{Nothing}}
 const LabMapElement = Union{Type{Floor},
                             GuardType,
                             Type{Stuff},
@@ -239,14 +239,18 @@ function Base.copy(pos::Union{CartesianIndex{2}, Nothing})
 end
 
 mutable struct SimulatorState
-    guard_pos :: Union{CartesianIndex{2}, Nothing}
+    guard_pos :: Union{CartesianIndex{2}, Type{Nothing}}
     map :: LabMap
     SimulatorState(map::LabMap) = new(findfirst(is_guard, map), map)
     SimulatorState(s::String) = SimulatorState(parse_labmap(s))
     SimulatorState(s::SimulatorState) = new(copy(s.guard_pos), copy(s.map))
 end
 
-function coord_inside(coord::Nothing, ::Any)
+function Base.copy(s::SimulatorState) :: SimulatorState
+    SimulatorState(s)
+end
+
+function coord_inside(::Type{Nothing}, ::Any)
     false
 end
 
@@ -263,7 +267,7 @@ function width(m::LabMap)
 end
 
 function get_guard(s::SimulatorState)
-    s.map[s.guard_pos]
+    if s.guard_pos == Nothing ; Nothing else s.map[s.guard_pos] end
 end
 
 function guard_next(Nothing, ::GuardLookingUp)
@@ -286,9 +290,14 @@ function guard_next(s::SimulatorState)
     end
 end
 
-function guard_advance(s::SimulatorState)
+function guard_advance(s::SimulatorState) :: Union{CartesianIndex{2}, Type{Nothing}}
     pos = s.guard_pos
-    guard_advance_for(pos, get_guard(s))
+    next = guard_advance_for(pos, get_guard(s))
+    if coord_inside(next, s.map)
+        next
+    else
+        Nothing
+    end
 end
 
 function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingUp})
@@ -328,6 +337,7 @@ function step_simulation!(s::SimulatorState)
     next_coord, next_guard = values(guard_next(s))
     if next_coord == Nothing
         s.map[prev_coord] = Breadcrumb
+        s.guard_pos = Nothing
         Stop
     else
         s.map[prev_coord] = Breadcrumb
@@ -444,19 +454,48 @@ end
 # 
 # You need to get the guard stuck in a loop by adding a single new obstruction. How many different positions could you choose for this obstruction?
 
-function check_for_loops(s_::SimulatorState)
-    s = SimulatorState(s_)
-    guard_rotate(get_guard(s))
+function check_for_loop(s::SimulatorState, max_steps::Int = 100000 ) :: Int
+    # I could be smart and check the minimal thing neccesary but meh... let's save all positions
+
+    visited = []
+    count = 0
+    flag = GoOn
+
+    while flag == GoOn && count < max_steps
+        guard_state = (s.guard_pos, get_guard(s))
+        if guard_state in visited
+            return 1
+        end
+        push!(visited, guard_state)
+        count += 1
+        flag = step_simulation!(s)
+    end
+
+    return 0
+
 end
 
-function run_simulation_for_part2_from!(s::SimulatorState)
-    flag = GoOn
+function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = 100000000)
     count = 0
     loops = 0
+    flag = GoOn
+
+    starting_pos = copy(s.guard_pos)
+    next_from_start = guard_advance(s)
+    function can_be_placed(coord, map)
+        coord_inside(coord, map) && map[coord] != Stuff && coord != starting_pos && coord != next_from_start
+    end
+
+    # it seems that 1821 its just too high... why? and how?
     while flag == GoOn && count < max_steps
-        flag = step_simulation!(s)
-        loops += check_for_loop(copy(s))
+        s_ = copy(s)
+        next_pos_if_undisturbed = guard_advance(s_)
+        if can_be_placed(next_pos_if_undisturbed, s_.map)
+            s_.map[next_pos_if_undisturbed] = Stuff
+            loops += check_for_loop(s_)
+        end
         count += 1
+        flag = step_simulation!(s)
     end
     return loops
 end
@@ -464,11 +503,14 @@ end
 function (@main)(args)
     file = args[1]
     input_str = read(file, String)
-    s = SimulatorState(parse_labmap(input_str))
+
+    s = SimulatorState(input_str)
     run_simulation_for_part1_from!(s)
     println("visited positions: $(count_breadcrumbs(s.map))")
 
-    run_simulation_for_part2_from!(SimulatorState(input_str))
+    loops = run_simulation_for_part2_from!(SimulatorState(input_str))
+    println("I found $(loops) places to place stuff and make a loop")
+
     0
 end
 
