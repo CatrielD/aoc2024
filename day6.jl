@@ -548,8 +548,12 @@ function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = 1000
     starting_pos = copy(s.guard_pos)
     next_from_start = guard_next_coord(s)
 
-    function can_be_placed(coord, map)
-        coord_inside(coord, map) && map[coord] != Stuff && coord != starting_pos && coord != next_from_start
+    function can_be_placed_for_firt_time(coord, map)
+        # Breadcrumbs shouldn't be allowed. If guard already passed
+        # through position, and its now aproching from another angle,
+        # it doesn't mather if a new loop can be made, the one that the guard
+        # will make, it's the first one!
+        coord_inside(coord, map) && map[coord] == Floor && coord != starting_pos && coord != next_from_start
     end
 
     loops = 0
@@ -559,7 +563,7 @@ function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = 1000
             @match guard_next_coord(s) begin
                 ::Type{Nothing} => 0
                 coord => begin
-                    if can_be_placed(coord, s.map)
+                    if can_be_placed_for_firt_time(coord, s.map)
                         s.map[coord] = Stuff
                         return s |> (s -> check_for_loop(s, max_steps)) |> alpha
                     else
