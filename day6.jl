@@ -222,12 +222,6 @@ function Base.show(io::IO, ::Type{Breadcrumb})
     write(io, 'X')
 end
 
-# this loops forever, why? show it shouldn't call itself
-#function Base.show(io::IO, s::SimulatorState)
-#    show(s.map)
-#    write(io, "guard in: $s.guard_pos\n")
-#end
-
 ######################################################################
 ###                                                                ###
 ###                              logic                             ###
@@ -267,6 +261,23 @@ end
 
 function Base.deepcopy(s::SimulatorState) :: SimulatorState
     SimulatorState(s)
+end
+
+function Base.println(io::IO, s::SimulatorState)
+    print(io, "  ")
+    for i = 1:size(s.map, 1)
+        print(io, i % 10)
+    end
+    print(io, "\n")
+    for i = 1:size(s.map, 1)
+        print(io, i % 10)
+        print(io, " ")
+        for j = 1:size(s.map, 2)
+            print(io, s.map[i, j])
+        end
+        print(io, '\n')
+    end
+    println(io, "guard in: $(s.guard_pos)\n")
 end
 
 function coord_inside(::Type{Nothing}, ::Any)
@@ -379,16 +390,21 @@ function run_simulation_from!(f::Function, s::SimulatorState, max_steps=10000)
     flag = s.running_state
     if flag != Dead
         s.running_state = GoOn
-        count = 0
-        while s.running_state == GoOn && count < max_steps
+        flag = GoOn
+        step_count = 0
+        while flag == GoOn && step_count < max_steps
             flag = f(s)
-            count += 1
+            step_count += 1
+        end
+        if step_count >= max_steps
+            print("MAX STEPs REACHED!")
         end
     end
+    return step_count
 end
 
-function run_simulation_for_part1_from!(s::SimulatorState, max_steps=10000)
-    run_simulation_from!(s) do s
+function run_simulation_for_part1_from!(s::SimulatorState, max_steps=10000000)
+    run_simulation_from!(s, max_steps) do s
         step_simulation!(s)
     end
     return count_breadcrumbs(s.map)
@@ -498,12 +514,16 @@ example_expected_result_part2 = 6
 
 function check_for_loop(s::SimulatorState, max_steps::Int = 100000) :: Bool
     # I could be smart and check the minimal thing neccesary but meh... let's save all positions
-
     visited = []
     is_there_a_loop = false
-    # como no devuelvo nada de run_simultion_from, no puedo hacer un return
-    # desde dentro del do... realmente el non local return de smalltalk es necesario
-    run_simulation_from!(s) do s
+    # como no devuelvo nada de run_simultion_from, no puedo hacer un
+    # return desde dentro del do para que el bloque
+    # run_simul... devuelva un valor util (devuelve la cantidad de
+    # iteraciones) entonces modifico un booleano, realmente el non
+    # local return de smalltalk es necesario TODO: make macro
+    # replacing return Dead with @done! ¿¿and a generic non local return
+    # macro??
+    run_simulation_from!(s, max_steps) do s
         guard_state = (s.guard_pos, get_guard(s))
         if guard_state in visited
             is_there_a_loop = true
@@ -522,27 +542,29 @@ function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = 1000
     # TODO this could return an object that memoizes deltas but
     # implements the same interface than an state!!! so minimal modifications
     # do not consume memory needlessly
+    # for this I should access map elements via methods
     with_temp_state(f, s) = s |> deepcopy |> f
 
-    function guard_inmediate_next_pos(s::SimulatorState) :: MapCoord
-        current_pos = s.guard_pos
-        with_temp_state(s) do s
-            while guard_next_coord(s) == current_pos && s.running_state != Dead
-                step_simulation!(s)
-            end
-            return guard_next_coord(s)
-        end
+    starting_pos = copy(s.guard_pos)
+    next_from_start = guard_next_coord(s)
+
+    function can_be_placed(coord, map)
+        coord_inside(coord, map) && map[coord] != Stuff && coord != starting_pos && coord != next_from_start
     end
 
     loops = 0
     # it seems that 1821 its just too high... why? and how?
-    run_simulation_from!(s) do s
+    run_simulation_from!(s, max_steps) do s
         loops += with_temp_state(s) do s
-            @match guard_inmediate_next_pos(s) begin
+            @match guard_next_coord(s) begin
                 ::Type{Nothing} => 0
                 coord => begin
-                    s.map[coord] = Stuff
-                    return s |> check_for_loop |> alpha
+                    if can_be_placed(coord, s.map)
+                        s.map[coord] = Stuff
+                        return s |> (s -> check_for_loop(s, max_steps)) |> alpha
+                    else
+                        0
+                    end
                 end
             end
         end
