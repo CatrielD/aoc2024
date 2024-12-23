@@ -1,4 +1,5 @@
-using Base: copy
+using Base: copy, return_types
+using Match
 
 # --- Day 6: Guard Gallivant ---
 # 
@@ -109,6 +110,10 @@ using Base: copy
 # tips.
 # ... LOL, but is fun ... vOv
 
+function alpha(b::Bool) :: Int8
+    return if b 1 else 0 end
+end
+
 struct Thing{C} end
 Thing(x) = Thing{x}()
 
@@ -119,6 +124,7 @@ abstract type GuardLookingDown end
 abstract type GuardLookingLeft end
 abstract type Stuff end
 abstract type Breadcrumb end
+# TODO: replace Type here for Type in LabMapElement
 const GuardType = Union{Type{GuardLookingDown},
                         Type{GuardLookingLeft},
                         Type{GuardLookingRight},
@@ -129,8 +135,13 @@ const LabMapElement = Union{Type{Floor},
                             Type{Stuff},
                             Type{Breadcrumb}}
 
-abstract type Stop end
+abstract type New end
 abstract type GoOn end
+abstract type Dead end
+
+const RunningState = Union{Type{New},
+                           Type{GoOn},
+                           Type{Dead}}
 
 function Specialize(::Thing{'.'})
     Floor
@@ -166,6 +177,8 @@ example="""....#.....
            #.........
            ......#...
            """
+
+example_expected_result = 41
 
 ######################################################################
 ###                                                                ###
@@ -230,8 +243,13 @@ function is_guard(::LabMapElement)
     false
 end
 
-function Base.copy(pos::Union{CartesianIndex{2}, Nothing})
-    if pos == Nothing
+const MapCoord = Union{CartesianIndex{2}, Type{Nothing}}
+
+# por qué tengo que hacer esto!?
+Base.copy(::CartesianIndex{2}) = CartesianIndex
+
+function Base.deepcopy(pos::MapCoord)
+    if Nothing == pos
         Nothing
     else
         CartesianIndex(pos[1], pos[2])
@@ -239,14 +257,15 @@ function Base.copy(pos::Union{CartesianIndex{2}, Nothing})
 end
 
 mutable struct SimulatorState
-    guard_pos :: Union{CartesianIndex{2}, Type{Nothing}}
+    guard_pos :: MapCoord
     map :: LabMap
-    SimulatorState(map::LabMap) = new(findfirst(is_guard, map), map)
+    running_state :: RunningState
+    SimulatorState(map::LabMap) = new(findfirst(is_guard, map), map, New)
     SimulatorState(s::String) = SimulatorState(parse_labmap(s))
-    SimulatorState(s::SimulatorState) = new(copy(s.guard_pos), copy(s.map))
+    SimulatorState(s::SimulatorState) = new(deepcopy(s.guard_pos), deepcopy(s.map), s.running_state)
 end
 
-function Base.copy(s::SimulatorState) :: SimulatorState
+function Base.deepcopy(s::SimulatorState) :: SimulatorState
     SimulatorState(s)
 end
 
@@ -270,27 +289,25 @@ function get_guard(s::SimulatorState)
     if s.guard_pos == Nothing ; Nothing else s.map[s.guard_pos] end
 end
 
-function guard_next(Nothing, ::GuardLookingUp)
-    Nothing
+function guard_next(::Type{Nothing}, g)
+    (Nothing, g)
 end
 
 function guard_next(s::SimulatorState)
     #guard_next_for(s, get_guard(s))
     pos = s.guard_pos
     g = get_guard(s)
-    next_coord = guard_advance(s)
+    next_coord = guard_next_coord(s)
     if ! coord_inside(next_coord, s.map)
         (coord = Nothing, guard = Nothing)
+    elseif s.map[next_coord] == Stuff
+        (coord = pos, guard = guard_rotate(g))
     else
-        if s.map[next_coord] == Stuff
-            (coord = pos, guard = guard_rotate(g))
-        else
-            (coord = next_coord, guard = g)
-        end
+        (coord = next_coord, guard = g)
     end
 end
 
-function guard_advance(s::SimulatorState) :: Union{CartesianIndex{2}, Type{Nothing}}
+function guard_next_coord(s::SimulatorState) :: MapCoord
     pos = s.guard_pos
     next = guard_advance_for(pos, get_guard(s))
     if coord_inside(next, s.map)
@@ -300,65 +317,88 @@ function guard_advance(s::SimulatorState) :: Union{CartesianIndex{2}, Type{Nothi
     end
 end
 
-function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingUp})
+function guard_advance_for(::Type{Nothing}, ::Type{Nothing})
+    Nothing
+end
+
+function guard_advance_for(pos::CartesianIndex{2}, ::Type{GuardLookingUp})
     CartesianIndex(pos[1]-1, pos[2])
 end
 
-function guard_rotate(g::Type{GuardLookingUp})
+function guard_rotate(::Type{GuardLookingUp})
     GuardLookingRight
 end
 
-function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingDown})
+function guard_advance_for(pos::CartesianIndex{2}, ::Type{GuardLookingDown})
     CartesianIndex(pos[1]+1, pos[2])
 end
 
-function guard_rotate(g::Type{GuardLookingDown})
+function guard_rotate(::Type{GuardLookingDown})
     GuardLookingLeft
 end
 
-function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingRight})
+function guard_advance_for(pos::CartesianIndex{2}, ::Type{GuardLookingRight})
     CartesianIndex(pos[1], pos[2]+1)
 end
 
-function guard_rotate(g::Type{GuardLookingRight})
+function guard_rotate(::Type{GuardLookingRight})
     GuardLookingDown
 end
 
-function guard_advance_for(pos::CartesianIndex{2}, g::Type{GuardLookingLeft})
+function guard_advance_for(pos::CartesianIndex{2}, ::Type{GuardLookingLeft})
     CartesianIndex(pos[1], pos[2]-1)
 end
 
-function guard_rotate(g::Type{GuardLookingLeft})
+function guard_rotate(::Type{GuardLookingLeft})
     GuardLookingUp
 end
 
 function step_simulation!(s::SimulatorState)
     prev_coord = s.guard_pos
+    @assert prev_coord != Nothing "la simulación debió parar antes!"
     next_coord, next_guard = values(guard_next(s))
     if next_coord == Nothing
         s.map[prev_coord] = Breadcrumb
         s.guard_pos = Nothing
-        Stop
+        s.running_state = Dead
+        Dead
     else
         s.map[prev_coord] = Breadcrumb
         s.map[next_coord] = next_guard
         s.guard_pos = next_coord
+        s.running_state = GoOn
         GoOn
-    end
-end
-
-function run_simulation_for_part1_from!(s::SimulatorState, max_steps = 10000)
-    flag = GoOn
-    count = 0
-    while flag == GoOn && count < max_steps
-        flag = step_simulation!(s)
-        count += 1
     end
 end
 
 function count_breadcrumbs(m::LabMap)
     length(findall(x -> x == Breadcrumb, m))
 end
+
+function run_simulation_from!(f::Function, s::SimulatorState, max_steps=10000)
+    flag = s.running_state
+    if flag != Dead
+        s.running_state = GoOn
+        count = 0
+        while s.running_state == GoOn && count < max_steps
+            flag = f(s)
+            count += 1
+        end
+    end
+end
+
+function run_simulation_for_part1_from!(s::SimulatorState, max_steps=10000)
+    run_simulation_from!(s) do s
+        step_simulation!(s)
+    end
+    return count_breadcrumbs(s.map)
+end
+
+function test_part1()
+    @assert run_simulation_for_part1_from!(SimulatorState(example)) == example_expected_result
+    print("Ok!")
+end
+
 
 # --- Part Two ---
 # 
@@ -454,50 +494,67 @@ end
 # 
 # You need to get the guard stuck in a loop by adding a single new obstruction. How many different positions could you choose for this obstruction?
 
-function check_for_loop(s::SimulatorState, max_steps::Int = 100000 ) :: Int
+example_expected_result_part2 = 6
+
+function check_for_loop(s::SimulatorState, max_steps::Int = 100000) :: Bool
     # I could be smart and check the minimal thing neccesary but meh... let's save all positions
 
     visited = []
-    count = 0
-    flag = GoOn
-
-    while flag == GoOn && count < max_steps
+    is_there_a_loop = false
+    # como no devuelvo nada de run_simultion_from, no puedo hacer un return
+    # desde dentro del do... realmente el non local return de smalltalk es necesario
+    run_simulation_from!(s) do s
         guard_state = (s.guard_pos, get_guard(s))
         if guard_state in visited
-            return 1
+            is_there_a_loop = true
+            return Dead
         end
         push!(visited, guard_state)
-        count += 1
-        flag = step_simulation!(s)
+        step_simulation!(s)
     end
 
-    return 0
+    return is_there_a_loop
 
 end
 
 function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = 100000000)
-    count = 0
-    loops = 0
-    flag = GoOn
 
-    starting_pos = copy(s.guard_pos)
-    next_from_start = guard_advance(s)
-    function can_be_placed(coord, map)
-        coord_inside(coord, map) && map[coord] != Stuff && coord != starting_pos && coord != next_from_start
+    # TODO this could return an object that memoizes deltas but
+    # implements the same interface than an state!!! so minimal modifications
+    # do not consume memory needlessly
+    with_temp_state(f, s) = s |> deepcopy |> f
+
+    function guard_inmediate_next_pos(s::SimulatorState) :: MapCoord
+        current_pos = s.guard_pos
+        with_temp_state(s) do s
+            while guard_next_coord(s) == current_pos && s.running_state != Dead
+                step_simulation!(s)
+            end
+            return guard_next_coord(s)
+        end
     end
 
+    loops = 0
     # it seems that 1821 its just too high... why? and how?
-    while flag == GoOn && count < max_steps
-        s_ = copy(s)
-        next_pos_if_undisturbed = guard_advance(s_)
-        if can_be_placed(next_pos_if_undisturbed, s_.map)
-            s_.map[next_pos_if_undisturbed] = Stuff
-            loops += check_for_loop(s_)
+    run_simulation_from!(s) do s
+        loops += with_temp_state(s) do s
+            @match guard_inmediate_next_pos(s) begin
+                ::Type{Nothing} => 0
+                coord => begin
+                    s.map[coord] = Stuff
+                    return s |> check_for_loop |> alpha
+                end
+            end
         end
-        count += 1
-        flag = step_simulation!(s)
+        step_simulation!(s)
     end
     return loops
+end
+
+function test_part2()
+    sim = run_simulation_for_part2_from!(SimulatorState(example))
+    @assert (sim == example_expected_result_part2) "expected: $(example_expected_result_part2) but: $(sim)"
+    print("Ok!")
 end
 
 function (@main)(args)
@@ -505,11 +562,11 @@ function (@main)(args)
     input_str = read(file, String)
 
     s = SimulatorState(input_str)
-    run_simulation_for_part1_from!(s)
-    println("visited positions: $(count_breadcrumbs(s.map))")
+    visited = run_simulation_for_part1_from!(s)
+    println("part 1 - visited positions: $(visited)")
 
     loops = run_simulation_for_part2_from!(SimulatorState(input_str))
-    println("I found $(loops) places to place stuff and make a loop")
+    println("part 2 - I found $(loops) places to place stuff and make a loop")
 
     0
 end
