@@ -1,5 +1,6 @@
 using Base: copy, return_types
 using Match
+using ExprManipulation
 
 # --- Day 6: Guard Gallivant ---
 # 
@@ -509,32 +510,73 @@ end
 # 
 # You need to get the guard stuck in a loop by adding a single new obstruction. How many different positions could you choose for this obstruction?
 
+######################################################################
+###                                                                ###
+###                          Some macros:                          ###
+###                                                                ###
+######################################################################
+
+struct NonLocalReturn{T} <: Exception
+    val::T
+end
+
+macro nlreturn(val)
+    return esc(:(throw(NonLocalReturn($val))))
+end
+
+macro nonlocal(body...)
+    # esc its used to avoid hygiene, if not, variables would bind toplevel
+    return esc(:(
+        try
+            # ok, here we expand the body
+            $(body...)
+        catch e
+            if e isa NonLocalReturn
+                return e.val
+            end
+            throw(e)
+        end
+    ))
+end
+
+macro with_nonlocal_return(body...)
+    match_return = MExpr(:return, Slurp(:args))
+    new_body = transform(body...) do node
+        matched_return = match(match_return, node)
+        if !isnothing(matched_return)
+            :(@nlreturn $(matched_return[:args]...))
+        else
+            node
+        end
+    end
+    esc(:(@nonlocal $new_body))
+end
+
+######################################################################
+###                                                                ###
+###                      Now for the 2nd part!                     ###
+###                                                                ###
+######################################################################
+
+
 example_expected_result_part2 = 6
 
-function check_for_loop(s::SimulatorState, max_steps::Int = 100000) :: Bool
 function check_for_loop(s::SimulatorState, max_steps::Int = typemax(Int)) :: Bool
     # I could be smart and check the minimal thing neccesary but meh... let's save all positions
     visited = []
     is_there_a_loop = false
-    # como no devuelvo nada de run_simultion_from, no puedo hacer un
-    # return desde dentro del do para que el bloque
-    # run_simul... devuelva un valor util (devuelve la cantidad de
-    # iteraciones) entonces modifico un booleano, realmente el non
-    # local return de smalltalk es necesario TODO: make macro
-    # replacing return Dead with @done! ¿¿and a generic non local return
-    # macro??
-    run_simulation_from!(s, max_steps) do s
-        guard_state = (s.guard_pos, get_guard(s))
-        if guard_state in visited
-            is_there_a_loop = true
-            return Dead
+    @with_nonlocal_return begin
+        run_simulation_from!(s, max_steps) do s
+            guard_state = (s.guard_pos, get_guard(s))
+            if guard_state in visited
+                s.running_state = Dead
+                return true
+            end
+            push!(visited, guard_state)
+            step_simulation!(s)
         end
-        push!(visited, guard_state)
-        step_simulation!(s)
     end
-
-    return is_there_a_loop
-
+    return false
 end
 
 function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = typemax(Int))
