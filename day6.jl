@@ -305,7 +305,6 @@ function guard_next(::Type{Nothing}, g)
 end
 
 function guard_next(s::SimulatorState)
-    #guard_next_for(s, get_guard(s))
     pos = s.guard_pos
     g = get_guard(s)
     next_coord = guard_next_coord(s)
@@ -366,7 +365,7 @@ end
 
 function step_simulation!(s::SimulatorState)
     prev_coord = s.guard_pos
-    @assert prev_coord != Nothing "la simulación debió parar antes!"
+    @assert prev_coord != Nothing "Simulation should've stopped earlier!"
     next_coord, next_guard = values(guard_next(s))
     if next_coord == Nothing
         s.map[prev_coord] = Breadcrumb
@@ -386,7 +385,7 @@ function count_breadcrumbs(m::LabMap)
     length(findall(x -> x == Breadcrumb, m))
 end
 
-function run_simulation_from!(f::Function, s::SimulatorState, max_steps=10000)
+function run_simulation_from!(f::Function, s::SimulatorState, max_steps::Int = typemax(Int)) :: Int
     flag = s.running_state
     if flag != Dead
         s.running_state = GoOn
@@ -403,7 +402,7 @@ function run_simulation_from!(f::Function, s::SimulatorState, max_steps=10000)
     return step_count
 end
 
-function run_simulation_for_part1_from!(s::SimulatorState, max_steps=10000000)
+function run_simulation_for_part1_from!(s::SimulatorState, max_steps::Int = typemax(Int))
     run_simulation_from!(s, max_steps) do s
         step_simulation!(s)
     end
@@ -513,6 +512,7 @@ end
 example_expected_result_part2 = 6
 
 function check_for_loop(s::SimulatorState, max_steps::Int = 100000) :: Bool
+function check_for_loop(s::SimulatorState, max_steps::Int = typemax(Int)) :: Bool
     # I could be smart and check the minimal thing neccesary but meh... let's save all positions
     visited = []
     is_there_a_loop = false
@@ -537,7 +537,7 @@ function check_for_loop(s::SimulatorState, max_steps::Int = 100000) :: Bool
 
 end
 
-function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = 100000000)
+function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = typemax(Int))
 
     # TODO this could return an object that memoizes deltas but
     # implements the same interface than an state!!! so minimal modifications
@@ -548,22 +548,23 @@ function run_simulation_for_part2_from!(s::SimulatorState, max_steps::Int = 1000
     starting_pos = copy(s.guard_pos)
     next_from_start = guard_next_coord(s)
 
-    function can_be_placed_for_firt_time(coord, map)
-        # Breadcrumbs shouldn't be allowed. If guard already passed
-        # through position, and its now aproching from another angle,
-        # it doesn't mather if a new loop can be made, the one that the guard
-        # will make, it's the first one!
+    function can_be_placed_for_first_time(coord, map)
+        # Stuff shouldn't be placed over Breadcrumbs. THE TIME
+        # CONTINUUM MUST BE PRESERVED AT ALL COST. If guard already
+        # passed through position, and its now aproching from another
+        # angle, it doesn't mather if a new loop can be made, the one
+        # that the guard will make, it's the first one!
         coord_inside(coord, map) && map[coord] == Floor && coord != starting_pos && coord != next_from_start
     end
 
     loops = 0
-    # it seems that 1821 its just too high... why? and how?
+
     run_simulation_from!(s, max_steps) do s
         loops += with_temp_state(s) do s
             @match guard_next_coord(s) begin
                 ::Type{Nothing} => 0
                 coord => begin
-                    if can_be_placed_for_firt_time(coord, s.map)
+                    if can_be_placed_for_first_time(coord, s.map)
                         s.map[coord] = Stuff
                         return s |> (s -> check_for_loop(s, max_steps)) |> alpha
                     else
