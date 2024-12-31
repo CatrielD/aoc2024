@@ -3,7 +3,7 @@
 :- import_module io.
 :- pred main(io::di, io::uo) is cc_multi.
 :- implementation.
-:- import_module list, string, int, char, bool, solutions.
+:- import_module list, string, int, char, bool, solutions, exception.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%                                                                %%%
@@ -12,13 +12,25 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-:- type operator ---> plus ; mult.
+:- type operator ---> plus ; mult ; conc.
 
 :- pred operator_result_int_int(operator, int, int, int).
 :- mode operator_result_int_int(out, in, in, in) is nondet.
 :- mode operator_result_int_int(out, out, in, in) is multi.
+:- mode operator_result_int_int(in, out, in, in) is det.
 operator_result_int_int(plus, X + Y, X, Y).
 operator_result_int_int(mult, X * Y, X, Y).
+operator_result_int_int(conc, det_to_int(int_to_string(X) ++ int_to_string(Y)), X, Y).
+% ^ COMPILER UB?
+%   if I compile without optimizations, this fail and makes all the lines fail!
+%   but if I put a call to this last predicate in main it works! (see comment in main)
+%   or if a do not put a call to this predicate, but compile with: mmc -OX ... X!=2, it works!
+%   the problem seems to be in -O2 !?!?
+% edit: what works are the tests, running with input yields segment violation
+%   related: https://github.com/Mercury-Language/mercury/issues/103
+%            https://bugs.gentoo.org/846974
+%            https://bugs.mercurylang.org/view.php?id=561
+%   a compiler compilation flag ... maybe?
 
 % :- type equation_numbers == {int, list.list(int)}.
 %   ^ this works until you try to define a typeclass ...
@@ -65,7 +77,8 @@ solve(equats(R, [X|Numbers]), Solution) :- foldl(
 
 :- instance human_readable(operator) where [
     to_string(plus) = "+",
-    to_string(mult) = "x"
+    to_string(mult) = "x",
+    to_string(conc) = "||"
 ].
 
 % polemic ABUSE ...  it would be better to just do several functions,
@@ -205,13 +218,30 @@ numbers_calResult_report(Numbers, CalibrationResult, Report) :-
         , Numbers, {0, ""}, {CalibrationResult, Report}).
 
 main(!IO) :-
-    io.write_string("Ok, let's try to solve this!\nbut, first the test!\n", !IO),
-    io.write_string("some simple tests...\n", !IO),
+
+    io.format("\n\n%i\n\n", [i(1+det_to_int(string(11) ++ string(2)))], !IO),
+
+    %% leave it here for doc purposes, see comment in operator_result_in_int(conc,...)
+    % operator_result_int_int(_, _, 1, 2),
+
+    io.write_string("Ok, let's try to solve this!\nbut, first the test!\n" ++
+                    "some simple tests...\n"
+                   , !IO),
+
     simple_tests(!IO),
+
     io.write_string("testing the example\n", !IO),
+
     numbers_calResult_report(example, ExampleResult, ExampleReport),
-    io.format("%s", [s(ExampleReport)], !IO),
-    io.format("total calibration result: %i\n", [i(ExampleResult)], !IO),
+
+   (if (ExampleResult = 3749)
+    then io.write_string("\nexample yields part1 result!\n\n", !IO)
+    else (if (ExampleResult = 11387)
+          then io.write_string("\nexample yields part2 result!\n\n", !IO))
+          else throw("Tests failed!")),
+
+    io.format("details:\n%s\ntotal calibration result: %i\n", [s(ExampleReport), i(ExampleResult)], !IO),
+
     io.command_line_arguments(Args, !IO),
     ( if Args = [InputFileName] then
         io.open_input(InputFileName, OpenResult, !IO),
