@@ -63,7 +63,7 @@ solve(equats(R, [X|Numbers]), Solution) :- foldl(
     to_string(equats(X, Lst)) = string.format("%i =?= %s", [i(X), s(string(Lst))])
 ].
 
-:- instance human_readable(operator) where [ % to_string(operator) = string is det.
+:- instance human_readable(operator) where [
     to_string(plus) = "+",
     to_string(mult) = "x"
 ].
@@ -104,6 +104,11 @@ solve(equats(R, [X|Numbers]), Solution) :- foldl(
             ]))
 ].
 
+% and some sane default behaviour
+:- instance human_readable(solved_equation) where [
+    (to_string(T) = to_string(popts(bool_opts(no), of_seq(T))))
+].
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%                                                                %%%
 %%%                          input parsing                         %%%
@@ -134,7 +139,7 @@ integer_dcg(Int) --> integer_const(ConstInt),
 
 :- pred numbers_sep_by_spaces(list.list(int)::out, list(char)::in, list(char)::out) is semidet.
 
-% numbers_sep_by_spaces([Number]) --> integer_dcg(Number).
+% using if/then/else makes it *det, if you do pattern matching here, it will be multi and is not something I want.
 numbers_sep_by_spaces([Number|Rest]) --> integer_dcg(Number),
                                          (if [' ']
                                           then numbers_sep_by_spaces(Rest)
@@ -167,11 +172,11 @@ example =
 :- pred print_simple_test_for(equation_numbers::in, io::di, io::uo) is cc_multi.
 print_simple_test_for(Eq, !IO) :-
     (if solve(Eq, Sol)
-    then io.format(
+     then io.format(
         "%s -> %s\n",
-        [s(to_string(Eq)), s(to_string(popts(bool_opts(no), of_seq(Sol))))],
+        [s(to_string(Eq)), s(to_string(Sol))],
         !IO)
-    else io.format("%s no solution found!\n", [s(to_string(Eq))], !IO)).
+     else io.format("%s no solution found!\n", [s(to_string(Eq))], !IO)).
 
 :- pred simple_tests(io::di, io::uo) is cc_multi.
 simple_tests(!IO) :-
@@ -179,15 +184,15 @@ simple_tests(!IO) :-
     print_simple_test_for(equats(13, [1,2,3,4]), !IO).
 
 
-:- pred numbers_calResult_report(list.list(equation_numbers)::in, int::out, string::out) is multi.
-numbers_calResult_report(Numbers, Result, Report) :-
+:- pred numbers_calResult_report(list.list(equation_numbers)::in, int::out, string::out) is cc_multi.
+numbers_calResult_report(Numbers, CalibrationResult, Report) :-
     foldl((pred(Eq::in, Acc::in, NAcc::out) is multi :-
         {X0, Msg0} = Acc, EqStr = s(to_string(Eq)),
         (if solve(Eq, Sol)
         then
             Msg = string.format(
                 "%s -> %s\n",
-                [EqStr, s(to_string(popts(bool_opts(no), of_seq(Sol))))]
+                [EqStr, s(to_string(Sol))]
             ),
                 NAcc = {value(Sol) + X0, append(Msg0, Msg)}
             else
@@ -197,7 +202,7 @@ numbers_calResult_report(Numbers, Result, Report) :-
                 )}
             )
         )
-        , Numbers, {0, ""}, {Result, Report}).
+        , Numbers, {0, ""}, {CalibrationResult, Report}).
 
 main(!IO) :-
     io.write_string("Ok, let's try to solve this!\nbut, first the test!\n", !IO),
