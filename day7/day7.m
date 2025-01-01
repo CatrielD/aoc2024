@@ -26,11 +26,9 @@ operator_result_int_int(conc, det_to_int(int_to_string(X) ++ int_to_string(Y)), 
 %   but if I put a call to this last predicate in main it works! (see comment in main)
 %   or if a do not put a call to this predicate, but compile with: mmc -OX ... X!=2, it works!
 %   the problem seems to be in -O2 !?!?
-% edit: what works are the tests, running with input yields segment violation
-%   related: https://github.com/Mercury-Language/mercury/issues/103
-%            https://bugs.gentoo.org/846974
-%            https://bugs.mercurylang.org/view.php?id=561
-%   a compiler compilation flag ... maybe?
+
+% edit: what works are the tests, running with input yields segment violation / nondetstack overflow in rotd 2024-12-31 version
+% this is fixed by incrementing de stack size! alas, dinamic increments need a grade that I couldn't compile!    
 
 % :- type equation_numbers == {int, list.list(int)}.
 %   ^ this works until you try to define a typeclass ...
