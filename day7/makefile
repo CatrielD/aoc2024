@@ -6,8 +6,6 @@ make_opts ::= -E -O6 \
 #mercury_compile: error: the Mercury standard library cannot be found in grade
 #`asm_fast.gc.stseg'.
 
-# --no-warn-undefined-options-variables
-
 .PHONY: all
 
 .PHONY: clean

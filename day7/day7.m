@@ -11,6 +11,11 @@
 %%%                                                                %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+:- func log10(int) = int.
+log10(X) = log2(X) / log2(10).
+
+:- func digits(int) = int.
+digits(X) = 1 + log10(X).
 
 :- type operator ---> plus ; mult ; conc.
 
@@ -20,7 +25,7 @@
 :- mode operator_result_int_int(in, out, in, in) is det.
 operator_result_int_int(plus, X + Y, X, Y).
 operator_result_int_int(mult, X * Y, X, Y).
-operator_result_int_int(conc, det_to_int(int_to_string(X) ++ int_to_string(Y)), X, Y).
+operator_result_int_int(conc, XY, X, Y) :- XY = (pow(10, digits(Y)) * X) + Y.
 % ^ COMPILER UB?
 %   if I compile without optimizations, this fail and makes all the lines fail!
 %   but if I put a call to this last predicate in main it works! (see comment in main)
@@ -250,7 +255,8 @@ main(!IO) :-
                 ReadResult = ok(StartString),
                 Lines = split_into_lines(StartString),
                 ( if map((pred(Line::in, Equation::out) is semidet :-
-                       equation_dcg(Equation, to_char_list(Line), [])), Lines, Numbers)
+                            equation_dcg(Equation, to_char_list(Line), [])),
+                         Lines, Numbers)
                   then
                      numbers_calResult_report(Numbers, Result, Report),
                      io.format("%s", [s(Report)], !IO),
