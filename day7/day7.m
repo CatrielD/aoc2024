@@ -11,6 +11,11 @@
 %%%                                                                %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+:- func log10(int) = int.
+log10(X) = log2(X) / log2(10).
+
+:- func digits(int) = int.
+digits(X) = 1 + log10(X).
 
 :- type operator ---> plus ; mult ; conc.
 
@@ -20,9 +25,9 @@
 :- mode operator_result_int_int(in, out, in, in) is det.
 operator_result_int_int(plus, X + Y, X, Y).
 operator_result_int_int(mult, X * Y, X, Y).
-operator_result_int_int(conc, det_to_int(int_to_string(X) ++ int_to_string(Y)), X, Y).
+% operator_result_int_int(conc, det_to_int(int_to_string(X) ++ int_to_string(Y)), X, Y).
 % ^ COMPILER UB?
-%   if I compile without optimizations, this fail and makes all the lines fail!
+%   if I compile without optimizations, this fail and makes all the lines fail! (EDIT; not with rotd-2024-12-31 version)
 %   but if I put a call to this last predicate in main it works! (see comment in main)
 %   or if a do not put a call to this predicate, but compile with: mmc -OX ... X!=2, it works!
 %   the problem seems to be in -O2 !?!?
@@ -31,6 +36,11 @@ operator_result_int_int(conc, det_to_int(int_to_string(X) ++ int_to_string(Y)), 
 %            https://bugs.gentoo.org/846974
 %            https://bugs.mercurylang.org/view.php?id=561
 %   a compiler compilation flag ... maybe?
+%
+% the above problem is fixed with new compiler version but processing input keeps failing, stack overflow!
+% so I try to solve it with out strings:
+operator_result_int_int(conc, XY, X, Y) :- XY = (pow(10, digits(Y)) * X) + Y.
+%operator_result_int_int(conc, XY, X, Y) :- XY = (pow(10, digits(Y) * X) + Y).
 
 % :- type equation_numbers == {int, list.list(int)}.
 %   ^ this works until you try to define a typeclass ...
@@ -252,7 +262,8 @@ main(!IO) :-
                 ReadResult = ok(StartString),
                 Lines = split_into_lines(StartString),
                 ( if map((pred(Line::in, Equation::out) is semidet :-
-                       equation_dcg(Equation, to_char_list(Line), [])), Lines, Numbers)
+                            equation_dcg(Equation, to_char_list(Line), [])),
+                         Lines, Numbers)
                   then
                      numbers_calResult_report(Numbers, Result, Report),
                      io.format("%s", [s(Report)], !IO),
