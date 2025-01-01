@@ -25,22 +25,15 @@ digits(X) = 1 + log10(X).
 :- mode operator_result_int_int(in, out, in, in) is det.
 operator_result_int_int(plus, X + Y, X, Y).
 operator_result_int_int(mult, X * Y, X, Y).
-% operator_result_int_int(conc, det_to_int(int_to_string(X) ++ int_to_string(Y)), X, Y).
+operator_result_int_int(conc, XY, X, Y) :- XY = (pow(10, digits(Y)) * X) + Y.
 % ^ COMPILER UB?
-%   if I compile without optimizations, this fail and makes all the lines fail! (EDIT; not with rotd-2024-12-31 version)
+%   if I compile without optimizations, this fail and makes all the lines fail!
 %   but if I put a call to this last predicate in main it works! (see comment in main)
 %   or if a do not put a call to this predicate, but compile with: mmc -OX ... X!=2, it works!
 %   the problem seems to be in -O2 !?!?
-% edit: what works are the tests, running with input yields segment violation
-%   related: https://github.com/Mercury-Language/mercury/issues/103
-%            https://bugs.gentoo.org/846974
-%            https://bugs.mercurylang.org/view.php?id=561
-%   a compiler compilation flag ... maybe?
-%
-% the above problem is fixed with new compiler version but processing input keeps failing, stack overflow!
-% so I try to solve it with out strings:
-operator_result_int_int(conc, XY, X, Y) :- XY = (pow(10, digits(Y)) * X) + Y.
-%operator_result_int_int(conc, XY, X, Y) :- XY = (pow(10, digits(Y) * X) + Y).
+
+% edit: what works are the tests, running with input yields segment violation / nondetstack overflow in rotd 2024-12-31 version
+% this is fixed by incrementing de stack size! alas, dinamic increments need a grade that I couldn't compile!    
 
 % :- type equation_numbers == {int, list.list(int)}.
 %   ^ this works until you try to define a typeclass ...
